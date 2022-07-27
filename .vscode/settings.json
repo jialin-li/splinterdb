@@ -1,0 +1,94 @@
+{
+    "gotoSymbolStack.currentStackPosition": 1,
+    "gotoSymbolStack.maxStackPosition": 11,
+    "gotoSymbolStack.filePositionInfo": [
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/include/splinterdb/transaction.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 130,
+                "character": 24
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/include/splinterdb/splinterdb.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 32,
+                "character": 13
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/include/splinterdb/data.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 105,
+                "character": 23
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/src/lock_table.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 20,
+                "character": 20
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/src/tictoc_data.c",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 61,
+                "character": 34
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/src/data_internal.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 129,
+                "character": 17
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/include/splinterdb/transaction.h",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 72,
+                "character": 26
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/third-party/iceberghashtable/src/iceberg_table.c",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 1949,
+                "character": 22
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/third-party/iceberghashtable/src/iceberg_table.c",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 1831,
+                "character": 23
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/third-party/iceberghashtable/src/iceberg_table.c",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 1668,
+                "character": 20
+            }
+        },
+        {
+            "textFile": "/home/deukyeon/vmware/splinterdb/src/transaction.c",
+            "viewColumn": 1,
+            "textPosition": {
+                "line": 327,
+                "character": 33
+            }
+        }
+    ]
+}
