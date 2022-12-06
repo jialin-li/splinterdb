@@ -7,34 +7,11 @@
 #include "splinterdb/transaction.h"
 #include "lock_table.h"
 
-typedef uint32 tictoc_timestamp;
-
-typedef struct ONDISK tictoc_timestamp_set {
-   tictoc_timestamp rts;
-   tictoc_timestamp wts;
-} tictoc_timestamp_set;
-
-extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
-
-typedef struct ONDISK tictoc_tuple_header {
-   tictoc_timestamp_set ts_set;
-   char                 value[]; // value provided by application
-} tictoc_tuple_header;
-
 tictoc_timestamp_set
 get_ts_from_tictoc_rw_entry(tictoc_rw_entry *entry);
 
 tictoc_rw_entry *
 tictoc_rw_entry_create();
-void
-tictoc_rw_entry_set_point_key(tictoc_rw_entry   *entry,
-                              slice              key,
-                              const data_config *app_data_cfg);
-void
-tictoc_rw_entry_set_range_key(tictoc_rw_entry   *entry,
-                              slice              key_start,
-                              slice              key_last,
-                              const data_config *app_data_cfg);
 
 bool
 tictoc_rw_entry_is_invalid(tictoc_rw_entry *entry);

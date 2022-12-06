@@ -23,13 +23,45 @@ interval_tree_key_create(slice data, const data_config *app_data_cfg)
    return (interval_tree_key){.data = data, .app_data_cfg = app_data_cfg};
 }
 
+/*
+ * Definition of tictoc_rw_entry and ones related to it
+ */
+
+/* typedef uint32 tictoc_timestamp; */
+
+/* typedef struct PACKED tictoc_timestamp_set { */
+/*    tictoc_timestamp rts; */
+/*    tictoc_timestamp wts; */
+/* } tictoc_timestamp_set; */
+
+typedef uint64 tictoc_timestamp;
+
+typedef struct PACKED tictoc_timestamp_set {
+  uint64 dummy : 4;
+  uint64 delta : 15; // rts = wts + delta
+  uint64 wts : 45;
+} tictoc_timestamp_set;
+
+extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
+
+static inline tictoc_timestamp
+tictoc_timestamp_set_get_rts(tictoc_timestamp_set ts) {
+  return ts.wts + ts.delta;
+}
+
+static inline tictoc_timestamp
+tictoc_timestamp_set_get_delta(tictoc_timestamp wts, tictoc_timestamp rts) {
+   return rts - wts;
+}
+
 // read_set and write_set entry stored locally
 typedef struct tictoc_rw_entry {
-   message_type    op;
-   writable_buffer key;
-   writable_buffer key_last; // The upper bound of a range, which can be empty
-                             // in the case of a point key
-   writable_buffer tuple;
+   slice key;
+   message msg; // value + op
+   tictoc_timestamp wts;
+   tictoc_timestamp rts;
+   
+   bool need_to_keep_key;
 
    struct rb_node    rb;
    interval_tree_key start;

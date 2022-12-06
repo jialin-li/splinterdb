@@ -1,8 +1,8 @@
 #include "lock_table.h"
 
 #include "platform.h"
-#include "poison.h"
 #include "data_internal.h"
+#include "poison.h"
 
 #define GET_ITSTART(n) (n->start)
 #define GET_ITLAST(n)  (n->last)

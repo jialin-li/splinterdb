@@ -1,14 +1,8 @@
 #include "tictoc_data.h"
 
 #include "data_internal.h"
-
-tictoc_timestamp_set
-get_ts_from_tictoc_rw_entry(tictoc_rw_entry *entry)
-{
-   tictoc_timestamp_set ts;
-   memcpy(&ts, writable_buffer_data(&entry->tuple), sizeof(ts));
-   return ts;
-}
+#include "splinterdb/data.h"
+#include "splinterdb/public_util.h"
 
 bool
 tictoc_rw_entry_is_invalid(tictoc_rw_entry *entry)
@@ -28,41 +22,17 @@ tictoc_rw_entry_create()
    return new_entry;
 }
 
-void
-tictoc_rw_entry_set_point_key(tictoc_rw_entry   *entry,
-                              slice              key,
-                              const data_config *app_data_cfg)
-{
-   writable_buffer_init_from_slice(&entry->key, 0, key);
-   entry->start = interval_tree_key_create(
-      writable_buffer_to_slice(&entry->key), app_data_cfg);
-   entry->last = interval_tree_key_create(writable_buffer_to_slice(&entry->key),
-                                          app_data_cfg);
-}
-
-void
-tictoc_rw_entry_set_range_key(tictoc_rw_entry   *entry,
-                              slice              key_start,
-                              slice              key_last,
-                              const data_config *app_data_cfg)
-{
-   writable_buffer_init_from_slice(&entry->key, 0, key_start);
-   entry->start = interval_tree_key_create(
-      writable_buffer_to_slice(&entry->key), app_data_cfg);
-
-   writable_buffer_init_from_slice(&entry->key_last, 0, key_last);
-   entry->last = interval_tree_key_create(
-      writable_buffer_to_slice(&entry->key_last), app_data_cfg);
-}
-
 static void
 tictoc_rw_entry_deinit(tictoc_rw_entry *entry)
 {
-   writable_buffer_deinit(&entry->key);
-   if (!writable_buffer_is_null(&entry->key_last)) {
-      writable_buffer_deinit(&entry->key_last);
+   bool can_key_free = !slice_is_null(entry->key) && !entry->need_to_keep_key;
+   if (can_key_free) {
+      platform_free_from_heap(0, (void *)slice_data(entry->key));
    }
-   writable_buffer_deinit(&entry->tuple);
+
+   if (!message_is_null(entry->msg)) {
+      platform_free_from_heap(0, (void *)message_data(entry->msg));
+   }
 }
 
 tictoc_rw_entry *
@@ -108,15 +78,10 @@ tictoc_rw_entry_is_not_in_write_set(tictoc_transaction *tt_txn,
                                     tictoc_rw_entry    *entry,
                                     const data_config  *cfg)
 {
-   slice entry_key = writable_buffer_to_slice(&entry->key);
-
    // TODO: feel free to implement binary search
    for (uint64 i = 0; i < tt_txn->write_cnt; ++i) {
       tictoc_rw_entry *w    = tictoc_get_write_set_entry(tt_txn, i);
-      slice            wkey = writable_buffer_to_slice(&w->key);
-
-      if (data_key_compare(cfg, key_create_from_slice(entry_key), 
-      key_create_from_slice(wkey)) == 0) {
+      if (data_key_compare(cfg, entry->key, w->key) == 0) {
          return FALSE;
       }
    }
@@ -161,10 +126,7 @@ tictoc_rw_entry_key_comp(const void *elem1, const void *elem2, void *args)
    tictoc_rw_entry  **b   = (tictoc_rw_entry **)elem2;
    const data_config *cfg = (const data_config *)args;
 
-   key akey = key_create_from_slice(writable_buffer_to_slice(&(*a)->key));
-   key bkey = key_create_from_slice(writable_buffer_to_slice(&(*b)->key));
-
-   return data_key_compare(cfg, akey, bkey);
+   return data_key_compare(cfg, (*a)->key, (*b)->key);
 }
 
 void
