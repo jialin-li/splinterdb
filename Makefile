@@ -85,6 +85,13 @@ LDFLAGS += -ggdb3 -pthread
 LIBS      = -lm -lpthread -laio -lxxhash
 DEPFLAGS  = -MMD -MP
 
+
+# Add libraries in third-party
+ICEBERGHT_HOME = ./third-party/icebergehashtable
+INCLUDE += -I$(ICEBERGHT_HOME)/include
+LDFLAGS += -L$(ICEBERGHT_HOME)
+LIBS	+= -liceberghashtable
+
 #*************************************************************#
 # Flags to select release vs debug builds, verbosity, etc.
 #
