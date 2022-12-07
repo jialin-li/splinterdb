@@ -39,7 +39,7 @@ tictoc_rw_entry_set_key(tictoc_rw_entry *e, slice key, const data_config *cfg)
    char *key_buf;
    key_buf = TYPED_ARRAY_ZALLOC(0, key_buf, KEY_SIZE);
    memmove(key_buf, slice_data(key), slice_length(key));
-   e->key   = slice_create(slice_length(key), key_buf);
+   e->key   = slice_create(KEY_SIZE, key_buf);
    e->start = e->last = interval_tree_key_create(e->key, cfg);
 }
 
@@ -92,8 +92,8 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
       }
 
       // Increase the refcount by one
-      iceberg_insert(
-         &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self());
+      platform_assert(iceberg_insert(
+         &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()));
    }
 
    return rc;
@@ -113,7 +113,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
    for (uint64 i = 0; i < tt_txn->write_cnt; ++i) {
       tictoc_rw_entry *w = tictoc_get_write_set_entry(tt_txn, i);
 
-      KeyType    key_ht   = (char *)slice_data(w->key);
+      KeyType    key_ht   = (KeyType)slice_data(w->key);
       ValueType *value_ht = NULL;
       iceberg_get_value(
          &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
@@ -240,7 +240,7 @@ tictoc_write(transactional_splinterdb *txn_kvsb, tictoc_transaction *tt_txn)
       bool is_key_different =
          data_key_compare(txn_kvsb->tcfg->kvsb_cfg.data_cfg,
                           w->key,
-                          slice_create(platform_strnlen(key_ht, KEY_SIZE), key_ht))
+                          slice_create(KEY_SIZE, key_ht))
          != 0;
       if (value_ht->refcount > 1) {
          tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
@@ -251,7 +251,7 @@ tictoc_write(transactional_splinterdb *txn_kvsb, tictoc_transaction *tt_txn)
             w->need_to_keep_key = TRUE;
          }
       } else {
-         if (is_key_different) {            
+         if (is_key_different) {
             platform_free_from_heap(0, key_ht);
             key_ht   = (KeyType)slice_data(w->key);
          }
@@ -316,10 +316,10 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
    w->rts = tictoc_timestamp_set_get_rts(ts_set);
 
    KeyType   key_ht = (KeyType)slice_data(w->key);
-   ValueType new_value_ht;
-   memmove(&new_value_ht, &ts_set, sizeof(ValueType));
+   ValueType *new_value_ht = (ValueType *)&ts_set;
+   // memmove(&new_value_ht, &ts_set, sizeof(ValueType));
    platform_assert(iceberg_insert(
-      &txn_kvsb->tscache, key_ht, new_value_ht, platform_thread_id_self()));
+      &txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
 
    return 0;
 }
@@ -331,7 +331,7 @@ transactional_splinterdb_config_init(
 {
    memmove(txn_splinterdb_cfg, kvsb_cfg, sizeof(txn_splinterdb_cfg->kvsb_cfg));
    txn_splinterdb_cfg->isol_level = TRANSACTION_ISOLATION_LEVEL_SERIALIZABLE;
-   txn_splinterdb_cfg->tscache_log_slots = 9;
+   txn_splinterdb_cfg->tscache_log_slots = 30;
 }
 
 static int
@@ -453,7 +453,7 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
       bool is_key_different =
          data_key_compare(txn_kvsb->tcfg->kvsb_cfg.data_cfg,
                           r->key,
-                          slice_create(platform_strnlen(key_ht, KEY_SIZE), key_ht))
+                          slice_create(KEY_SIZE, key_ht))
          != 0;
       if (value_ht->refcount > 1) {
          if (!is_key_different) {
