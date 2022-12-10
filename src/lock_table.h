@@ -37,9 +37,9 @@ interval_tree_key_create(slice data, const data_config *app_data_cfg)
 typedef uint64 tictoc_timestamp;
 
 typedef struct PACKED tictoc_timestamp_set {
-  uint64 dummy : 4;
+  uint64 dummy : 5;
   uint64 delta : 15; // rts = wts + delta
-  uint64 wts : 45;
+  uint64 wts : 44;
 } tictoc_timestamp_set;
 
 extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
