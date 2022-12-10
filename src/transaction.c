@@ -280,7 +280,7 @@ transactional_splinterdb_config_init(
 {
    memmove(txn_splinterdb_cfg, kvsb_cfg, sizeof(txn_splinterdb_cfg->kvsb_cfg));
    txn_splinterdb_cfg->isol_level = TRANSACTION_ISOLATION_LEVEL_SERIALIZABLE;
-   txn_splinterdb_cfg->tscache_log_slots = 24;
+   txn_splinterdb_cfg->tscache_log_slots = 28;
 }
 
 static int
