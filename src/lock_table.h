@@ -37,30 +37,32 @@ interval_tree_key_create(slice data, const data_config *app_data_cfg)
 typedef uint64 tictoc_timestamp;
 
 typedef struct PACKED tictoc_timestamp_set {
-  uint64 dummy : 5;
-  uint64 delta : 15; // rts = wts + delta
-  uint64 wts : 44;
+   uint64 dummy : 5;
+   uint64 delta : 15; // rts = wts + delta
+   uint64 wts : 44;
 } tictoc_timestamp_set;
 
 extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
 
 static inline tictoc_timestamp
-tictoc_timestamp_set_get_rts(tictoc_timestamp_set ts) {
-  return ts.wts + ts.delta;
+tictoc_timestamp_set_get_rts(tictoc_timestamp_set *ts)
+{
+   return ts->wts + ts->delta;
 }
 
 static inline tictoc_timestamp
-tictoc_timestamp_set_get_delta(tictoc_timestamp wts, tictoc_timestamp rts) {
+tictoc_timestamp_set_get_delta(tictoc_timestamp wts, tictoc_timestamp rts)
+{
    return rts - wts;
 }
 
 // read_set and write_set entry stored locally
 typedef struct tictoc_rw_entry {
-   slice key;
-   message msg; // value + op
+   slice            key;
+   message          msg; // value + op
    tictoc_timestamp wts;
    tictoc_timestamp rts;
-   
+
    bool need_to_keep_key;
 
    struct rb_node    rb;

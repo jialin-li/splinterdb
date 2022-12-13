@@ -80,7 +80,7 @@ tictoc_rw_entry_is_not_in_write_set(tictoc_transaction *tt_txn,
 {
    // TODO: feel free to implement binary search
    for (uint64 i = 0; i < tt_txn->write_cnt; ++i) {
-      tictoc_rw_entry *w    = tictoc_get_write_set_entry(tt_txn, i);
+      tictoc_rw_entry *w = tictoc_get_write_set_entry(tt_txn, i);
       if (data_key_compare(cfg, entry->key, w->key) == 0) {
          return FALSE;
       }

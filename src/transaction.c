@@ -71,19 +71,23 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
 
       tictoc_rw_entry_set_key(r, key, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
 
-      ValueType *value_ht = (ValueType *)&ZERO_TICTOC_TIMESTAMP_SET;
       KeyType    key_ht   = (KeyType)slice_data(r->key);
+      ValueType *value_ht = (ValueType *)&ZERO_TICTOC_TIMESTAMP_SET;
 
-      platform_assert(iceberg_insert(
-         &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()));
+      if (iceberg_insert(
+             &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
+      {
+         r->need_to_keep_key = TRUE;
+      }
 
+      value_ht = NULL;
       iceberg_get_value(
          &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
-      platform_assert(value_ht != NULL);
+      platform_assert(value_ht);
 
-      tictoc_timestamp_set ts_set = *((tictoc_timestamp_set *)value_ht);
-      r->wts                      = ts_set.wts;
-      r->rts                      = tictoc_timestamp_set_get_rts(ts_set);
+      tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
+      r->wts                       = ts_set->wts;
+      r->rts                       = tictoc_timestamp_set_get_rts(ts_set);
    }
 
    return rc;
@@ -107,15 +111,14 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
       ValueType *value_ht = NULL;
       iceberg_get_value(
          &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
-
-      tictoc_timestamp tuple_rts           = 0;
-      bool             key_exists_in_cache = (value_ht != NULL);
+      bool key_exists_in_cache = (value_ht != NULL);
       if (key_exists_in_cache) {
-         tictoc_timestamp_set ts_set = *((tictoc_timestamp_set *)value_ht);
-         tuple_rts                   = tictoc_timestamp_set_get_rts(ts_set);
+         tt_txn->commit_wts = MAX(
+            tt_txn->commit_wts,
+            tictoc_timestamp_set_get_rts((tictoc_timestamp_set *)value_ht) + 1);
+      } else {
+         tt_txn->commit_wts = MAX(tt_txn->commit_wts, 1);
       }
-
-      tt_txn->commit_wts = MAX(tt_txn->commit_wts, tuple_rts + 1);
    }
 
    for (uint64 i = 0; i < tt_txn->read_cnt; ++i) {
@@ -140,15 +143,13 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
          ValueType *value_ht = NULL;
          iceberg_get_value(
             &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
-         platform_assert(value_ht != NULL);
+         platform_assert(value_ht);
 
-         tictoc_timestamp_set ts_set    = *((tictoc_timestamp_set *)value_ht);
-         tictoc_timestamp     tuple_wts = ts_set.wts;
-         tictoc_timestamp     tuple_rts = tictoc_timestamp_set_get_rts(ts_set);
+         tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
 
-         bool is_read_entry_written_by_another = r->wts != tuple_wts;
+         bool is_read_entry_written_by_another = r->wts != ts_set->wts;
          bool is_read_entry_locked_by_another =
-            tuple_rts <= tt_txn->commit_rts
+            tictoc_timestamp_set_get_rts(ts_set) <= tt_txn->commit_rts
             && lock_table_is_entry_locked(txn_kvsb->lock_tbl, r)
             && tictoc_rw_entry_is_not_in_write_set(
                tt_txn, r, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
@@ -159,14 +160,16 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
             return FALSE;
          }
 
-         uint32 new_rts = MAX(tt_txn->commit_rts, tuple_rts);
-         bool   need_to_update_rts =
-            (new_rts != tuple_rts) && !is_repeatable_read(tt_txn);
+         uint32 new_rts =
+            MAX(tt_txn->commit_rts, tictoc_timestamp_set_get_rts(ts_set));
+         bool need_to_update_rts =
+            (new_rts != tictoc_timestamp_set_get_rts(ts_set))
+            && !is_repeatable_read(tt_txn);
          if (need_to_update_rts) {
             tictoc_timestamp_set *ts_set_ptr = (tictoc_timestamp_set *)value_ht;
-            ts_set_ptr->wts                  = tuple_wts;
+            ts_set_ptr->wts                  = ts_set->wts;
             ts_set_ptr->delta =
-               tictoc_timestamp_set_get_delta(tuple_wts, new_rts);
+               tictoc_timestamp_set_get_delta(ts_set->wts, new_rts);
          }
          hash_lock_release(&txn_kvsb->hash_lock, r->key);
       }
@@ -256,7 +259,7 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
          }
 
          w->wts = ts_set.wts;
-         w->rts = tictoc_timestamp_set_get_rts(ts_set);
+         w->rts = tictoc_timestamp_set_get_rts(&ts_set);
 
          return 0;
       }
@@ -268,7 +271,7 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
    tictoc_rw_entry_set_key(w, key, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
    tictoc_rw_entry_set_msg(w, msg);
    w->wts = ts_set.wts;
-   w->rts = tictoc_timestamp_set_get_rts(ts_set);
+   w->rts = tictoc_timestamp_set_get_rts(&ts_set);
 
    return 0;
 }
@@ -392,41 +395,13 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
    tictoc_transaction_unlock_all_write_set(tt_txn, txn_kvsb->lock_tbl);
 
    for (int i = 0; i < tt_txn->read_cnt; ++i) {
-      tictoc_rw_entry *r        = tictoc_get_read_set_entry(tt_txn, i);
-      KeyType          key_ht   = (KeyType)slice_data(r->key);
-      ValueType       *value_ht = NULL;
-      iceberg_get_key_value(
-         &txn_kvsb->tscache, &key_ht, &value_ht, platform_thread_id_self());
-      platform_assert(value_ht != NULL);
-
+      tictoc_rw_entry *r      = tictoc_get_read_set_entry(tt_txn, i);
+      KeyType          key_ht = (KeyType)slice_data(r->key);
       // Decrease the refcount by one
-      iceberg_remove(&txn_kvsb->tscache, key_ht, platform_thread_id_self());
-
-      /*
-       * A comment on is_key_different
-       *
-       * The hash table assumes its application manages the memory of key. So,
-       * we have to keep at least one instance of each key to make the hash
-       * table work. If the key which is stored in the hash table is same to the
-       * current key and its `refcount` is greater than 1, the flag
-       * `need_to_keep_key` is set to TRUE so that it prevents from free on
-       * deinit. If `refcount` is 0 but those keys are different, we have to
-       * free the key in the hash table. That means the key used to be used for
-       * concurrent transactions but it is not going to be used any more.
-       *
-       */
-
-      bool is_key_different =
-         data_key_compare(txn_kvsb->tcfg->kvsb_cfg.data_cfg,
-                          r->key,
-                          slice_create(KEY_SIZE, key_ht))
-         != 0;
-      if (value_ht->refcount > 0) {
-         if (!is_key_different) {
-            r->need_to_keep_key = TRUE;
-         }
-      } else {
-         if (is_key_different) {
+      if (iceberg_remove_and_get_key(
+             &txn_kvsb->tscache, &key_ht, platform_thread_id_self()))
+      {
+         if (slice_data(r->key) != key_ht) {
             platform_free_from_heap(0, key_ht);
          }
       }

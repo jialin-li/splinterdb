@@ -110,8 +110,8 @@ lock_table_try_acquire_entry_lock(lock_table *lock_tbl, tictoc_rw_entry *entry)
                       : FALSE;
 
    if (is_exist) {
-     platform_mutex_unlock(&lock_tbl->lock);
-     return FALSE;
+      platform_mutex_unlock(&lock_tbl->lock);
+      return FALSE;
    }
 
    interval_tree_insert(entry, &lock_tbl->root);
