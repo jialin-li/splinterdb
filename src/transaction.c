@@ -111,11 +111,12 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
       ValueType *value_ht = NULL;
       iceberg_get_value(
          &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
+
       bool key_exists_in_cache = (value_ht != NULL);
       if (key_exists_in_cache) {
-         tt_txn->commit_wts = MAX(
-            tt_txn->commit_wts,
-            tictoc_timestamp_set_get_rts((tictoc_timestamp_set *)value_ht) + 1);
+         tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
+         tt_txn->commit_wts =
+            MAX(tt_txn->commit_wts, tictoc_timestamp_set_get_rts(ts_set) + 1);
       } else {
          tt_txn->commit_wts = MAX(tt_txn->commit_wts, 1);
       }
@@ -246,8 +247,8 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
 
             platform_free_from_heap(0, (void *)message_data(w->msg));
 
-            void *msg_buf = platform_aligned_zalloc(
-               0, 64, merge_accumulator_length(&new_message));
+            char *msg_buf;
+            msg_buf = TYPED_ARRAY_ZALLOC(0, msg_buf,  merge_accumulator_length(&new_message));
             memmove(msg_buf,
                     merge_accumulator_data(&new_message),
                     merge_accumulator_length(&new_message));

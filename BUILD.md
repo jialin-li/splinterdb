@@ -12,12 +12,6 @@ the submodule,
 git submodule update --init --recursive
 ```
 
-If you already had the initialized submodule, you would run this instead.
-
-```sh
-git submodule update --remote
-```
-
 ### Compile the iceberg hashtable
 
 To compile the iceberg hashtable, move to `third-party/iceberghashtable` and run
