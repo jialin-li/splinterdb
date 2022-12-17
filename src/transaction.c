@@ -4,6 +4,7 @@
 #include "platform_linux/platform.h"
 #include "data_internal.h"
 #include "util.h"
+#include "experimental_mode.h"
 #include "poison.h"
 
 tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET = {.dummy = 0,
@@ -161,20 +162,26 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
             return FALSE;
          }
 
-         uint32 new_rts =
-            MAX(tt_txn->commit_rts, tictoc_timestamp_set_get_rts(ts_set));
-         bool need_to_update_rts =
-            (new_rts != tictoc_timestamp_set_get_rts(ts_set))
-            && !is_repeatable_read(tt_txn);
-         if (need_to_update_rts) {
-            tictoc_timestamp_set new_ts_set = {
-               .dummy = 0,
-               .wts = ts_set->wts,
-               .delta = tictoc_timestamp_set_get_delta(ts_set->wts, new_rts)
-            };
-            ValueType *new_value_ht = (ValueType *)&new_ts_set;
-            platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
+#if EXPERIMENTAL_MODE_NO_RTS == 1
+         if (0) {
+#endif
+            uint32 new_rts =
+               MAX(tt_txn->commit_rts, tictoc_timestamp_set_get_rts(ts_set));
+            bool need_to_update_rts =
+               (new_rts != tictoc_timestamp_set_get_rts(ts_set))
+               && !is_repeatable_read(tt_txn);
+            if (need_to_update_rts) {
+               tictoc_timestamp_set new_ts_set = {
+                  .dummy = 0,
+                  .wts = ts_set->wts,
+                  .delta = tictoc_timestamp_set_get_delta(ts_set->wts, new_rts)
+               };
+               ValueType *new_value_ht = (ValueType *)&new_ts_set;
+               platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
+            }
+#if EXPERIMENTAL_MODE_NO_RTS == 1
          }
+#endif
          hash_lock_release(&txn_kvsb->hash_lock, r->key);
       }
    }
@@ -219,7 +226,7 @@ tictoc_write(transactional_splinterdb *txn_kvsb, tictoc_transaction *tt_txn)
       KeyType    key_ht   = (KeyType)slice_data(w->key);
       ValueType *value_ht = (ValueType *)&ts_set;
    
-#if KEEP_ALL_KEYS == 1
+#if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
       if (iceberg_insert(
                &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
       {
@@ -295,7 +302,11 @@ transactional_splinterdb_config_init(
 {
    memmove(txn_splinterdb_cfg, kvsb_cfg, sizeof(txn_splinterdb_cfg->kvsb_cfg));
    txn_splinterdb_cfg->isol_level = TRANSACTION_ISOLATION_LEVEL_SERIALIZABLE;
+#if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
+   txn_splinterdb_cfg->tscache_log_slots = 32;
+#else
    txn_splinterdb_cfg->tscache_log_slots = 28;
+#endif
 }
 
 static int
@@ -406,7 +417,7 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
 
    tictoc_transaction_unlock_all_write_set(tt_txn, txn_kvsb->lock_tbl);
 
-#if KEEP_ALL_KEYS == 1
+#if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
    if (0) {
 #endif
 
@@ -423,7 +434,7 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
       }
    }
 
-#if KEEP_ALL_KEYS == 1
+#if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
    } // if (0)
 #endif
 

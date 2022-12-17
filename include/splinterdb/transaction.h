@@ -8,8 +8,6 @@
 #ifndef _TRANSACTION_H_
 #define _TRANSACTION_H_
 
-#define KEEP_ALL_KEYS 0
-
 #include "splinterdb/splinterdb.h"
 
 typedef struct transactional_splinterdb transactional_splinterdb;

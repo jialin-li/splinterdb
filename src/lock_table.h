@@ -7,6 +7,7 @@
 #include "splinterdb/data.h"
 #include "interval_tree/interval_tree_generic.h"
 #include "util.h"
+#include "experimental_mode.h"
 
 /*
  * Lock Table Entry call tictoc_rw_entry
@@ -47,13 +48,21 @@ extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
 static inline tictoc_timestamp
 tictoc_timestamp_set_get_rts(tictoc_timestamp_set *ts)
 {
+#if EXPERIMENTAL_MODE_NO_RTS == 1
+   return ts->wts;
+#else
    return ts->wts + ts->delta;
+#endif
 }
 
 static inline tictoc_timestamp
 tictoc_timestamp_set_get_delta(tictoc_timestamp wts, tictoc_timestamp rts)
 {
+#if EXPERIMENTAL_MODE_NO_RTS == 1
+   return 0;
+#else
    return rts - wts;
+#endif
 }
 
 // read_set and write_set entry stored locally
