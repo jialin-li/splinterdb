@@ -73,6 +73,7 @@ typedef struct tictoc_rw_entry {
    tictoc_timestamp rts;
 
    bool need_to_keep_key;
+   bool need_to_decrease_refcount;
 
    struct rb_node    rb;
    interval_tree_key start;

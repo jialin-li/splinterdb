@@ -64,9 +64,23 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
             slice                     user_key,
             splinterdb_lookup_result *result)
 {
-   int rc = splinterdb_lookup(txn_kvsb->kvsb, user_key, result);
+   const data_config *cfg = txn_kvsb->tcfg->kvsb_cfg.data_cfg;
+
+   int rc = splinterdb_lookup(txn_kvsb->kvsb, key, result);
 
    if (splinterdb_lookup_found(result)) {
+      // Check if there is the same key so that a txn does not increase the
+      // refcount on the same key multiple times
+      bool is_no_same_key = TRUE;
+      for (uint64 i = 0; i < tt_txn->read_cnt; ++i) {
+         tictoc_rw_entry *r = tictoc_get_read_set_entry(tt_txn, i);
+
+         if (data_key_compare(cfg, r->key, key) == 0) {
+            is_no_same_key = FALSE;
+            break;
+         }
+      }
+
       tictoc_rw_entry *r = tictoc_get_new_read_set_entry(tt_txn);
       platform_assert(!tictoc_rw_entry_is_invalid(r));
 
@@ -75,10 +89,13 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
       KeyType    key_ht   = (KeyType)slice_data(r->key);
       ValueType *value_ht = (ValueType *)&ZERO_TICTOC_TIMESTAMP_SET;
 
-      if (iceberg_insert(
-             &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
-      {
-         r->need_to_keep_key = TRUE;
+      if (is_no_same_key) {
+         if (iceberg_insert(
+               &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
+         {
+            r->need_to_keep_key = TRUE;
+         }
+         r->need_to_decrease_refcount = TRUE;
       }
 
       value_ht = NULL;
@@ -126,9 +143,9 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
    for (uint64 i = 0; i < tt_txn->read_cnt; ++i) {
       tictoc_rw_entry *r = tictoc_get_read_set_entry(tt_txn, i);
       tictoc_timestamp wts = r->wts;
-   #if EXPERIMENTAL_MODE_SILO == 1
+#if EXPERIMENTAL_MODE_SILO == 1
       wts += 1;
-   #endif
+#endif
       tt_txn->commit_rts = MAX(tt_txn->commit_rts, wts);
    }
 
@@ -434,6 +451,10 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
 
    for (int i = 0; i < tt_txn->read_cnt; ++i) {
       tictoc_rw_entry *r      = tictoc_get_read_set_entry(tt_txn, i);
+      if (!r->need_to_decrease_refcount) {
+         continue;
+      }
+
       KeyType          key_ht = (KeyType)slice_data(r->key);
       // Decrease the refcount by one
       if (iceberg_remove_and_get_key(
