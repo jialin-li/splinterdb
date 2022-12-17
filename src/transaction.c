@@ -218,6 +218,14 @@ tictoc_write(transactional_splinterdb *txn_kvsb, tictoc_transaction *tt_txn)
 
       KeyType    key_ht   = (KeyType)slice_data(w->key);
       ValueType *value_ht = (ValueType *)&ts_set;
+   
+#if KEEP_ALL_KEYS == 1
+      if (iceberg_insert(
+               &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
+      {
+         w->need_to_keep_key = TRUE;
+      }
+#endif
 
       iceberg_update(
          &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self());
@@ -380,7 +388,7 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
 {
    tictoc_transaction *tt_txn = &txn->tictoc;
 
-   bool write_successfully = FALSE;
+   bool committed = FALSE;
 
    // Step 1: Lock Write Set
    tictoc_transaction_sort_write_set(tt_txn, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
@@ -393,10 +401,14 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
 
    if (tictoc_validation(txn_kvsb, &txn->tictoc)) {
       tictoc_write(txn_kvsb, &txn->tictoc);
-      write_successfully = TRUE;
+      committed = TRUE;
    }
 
    tictoc_transaction_unlock_all_write_set(tt_txn, txn_kvsb->lock_tbl);
+
+#if KEEP_ALL_KEYS == 1
+   if (0) {
+#endif
 
    for (int i = 0; i < tt_txn->read_cnt; ++i) {
       tictoc_rw_entry *r      = tictoc_get_read_set_entry(tt_txn, i);
@@ -410,9 +422,14 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
          }
       }
    }
+
+#if KEEP_ALL_KEYS == 1
+   } // if (0)
+#endif
+
    tictoc_transaction_deinit(tt_txn, txn_kvsb->lock_tbl);
 
-   return write_successfully ? 0 : -1;
+   return committed ? 0 : -1;
 }
 
 int
