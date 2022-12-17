@@ -2,7 +2,86 @@
 
 #include "platform.h"
 #include "data_internal.h"
+#include "platform_types.h"
+#include "iceberg_table.h"
+#include "util.h"
 #include "poison.h"
+
+#if EXPERIMENTAL_MODE_USE_ICEBERG_FOR_LOCK_TABLE == 1
+
+typedef struct lock_table {
+   struct iceberg_table *table;
+} lock_table;
+
+static inline int
+lock_table_insert(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   KeyType key_ht = (KeyType)slice_data(entry->key);
+   ValueType value_ht = {
+      .refcount = 0,
+      .value = 1
+   };
+   return iceberg_insert(lock_tbl->table, key_ht, value_ht, platform_thread_id_self());
+}
+
+static inline void
+lock_table_delete(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   KeyType key_ht = (KeyType)slice_data(entry->key);
+   platform_assert(iceberg_force_remove(lock_tbl->table, key_ht, platform_thread_id_self()));
+}
+
+lock_table *
+lock_table_create()
+{
+   lock_table *lt;
+   lt       = TYPED_ZALLOC(0, lt);
+   lt->table = TYPED_ZALLOC(0, lt->table);
+
+   // TODO use an optimal size of hash table or enable resize
+   iceberg_init(lt->table, 24);
+   return lt;
+}
+
+void
+lock_table_destroy(lock_table *lock_tbl)
+{
+   platform_free(0, lock_tbl->table);
+   platform_free(0, lock_tbl);
+}
+
+// Lock returns the interval tree node pointer, and the pointer will
+// be used on deletion
+void
+lock_table_acquire_entry_lock(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   while (!lock_table_insert(lock_tbl, entry)) {
+      platform_pause();
+   }
+}
+
+// If there is a lock owner, it returns NULL
+bool
+lock_table_try_acquire_entry_lock(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   return lock_table_insert(lock_tbl, entry);
+}
+
+void
+lock_table_release_entry_lock(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   lock_table_delete(lock_tbl, entry);
+}
+
+bool
+lock_table_is_entry_locked(lock_table *lock_tbl, tictoc_rw_entry *entry)
+{
+   KeyType key_ht = (KeyType)slice_data(entry->key);
+   ValueType *value_ht = NULL;
+   return iceberg_get_value(lock_tbl->table, key_ht, &value_ht, platform_thread_id_self());
+}
+
+#else 
 
 #define GET_ITSTART(n) (n->start)
 #define GET_ITLAST(n)  (n->last)
@@ -131,3 +210,4 @@ lock_table_is_entry_locked(lock_table *lock_tbl, tictoc_rw_entry *entry)
 {
    return lock_table_exist_overlap(lock_tbl, entry);
 }
+#endif
