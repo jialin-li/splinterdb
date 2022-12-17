@@ -167,10 +167,13 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
             (new_rts != tictoc_timestamp_set_get_rts(ts_set))
             && !is_repeatable_read(tt_txn);
          if (need_to_update_rts) {
-            tictoc_timestamp_set *ts_set_ptr = (tictoc_timestamp_set *)value_ht;
-            ts_set_ptr->wts                  = ts_set->wts;
-            ts_set_ptr->delta =
-               tictoc_timestamp_set_get_delta(ts_set->wts, new_rts);
+            tictoc_timestamp_set new_ts_set = {
+               .dummy = 0,
+               .wts = ts_set->wts,
+               .delta = tictoc_timestamp_set_get_delta(ts_set->wts, new_rts)
+            };
+            ValueType *new_value_ht = (ValueType *)&new_ts_set;
+            platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
          }
          hash_lock_release(&txn_kvsb->hash_lock, r->key);
       }
