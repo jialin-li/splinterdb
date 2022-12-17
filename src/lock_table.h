@@ -48,7 +48,7 @@ extern tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET;
 static inline tictoc_timestamp
 tictoc_timestamp_set_get_rts(tictoc_timestamp_set *ts)
 {
-#if EXPERIMENTAL_MODE_NO_RTS == 1
+#if EXPERIMENTAL_MODE_SILO == 1
    return ts->wts;
 #else
    return ts->wts + ts->delta;
@@ -58,7 +58,7 @@ tictoc_timestamp_set_get_rts(tictoc_timestamp_set *ts)
 static inline tictoc_timestamp
 tictoc_timestamp_set_get_delta(tictoc_timestamp wts, tictoc_timestamp rts)
 {
-#if EXPERIMENTAL_MODE_NO_RTS == 1
+#if EXPERIMENTAL_MODE_SILO == 1
    return 0;
 #else
    return rts - wts;

@@ -125,7 +125,11 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
 
    for (uint64 i = 0; i < tt_txn->read_cnt; ++i) {
       tictoc_rw_entry *r = tictoc_get_read_set_entry(tt_txn, i);
-      tt_txn->commit_rts = MAX(tt_txn->commit_rts, r->wts);
+      tictoc_timestamp wts = r->wts;
+   #if EXPERIMENTAL_MODE_SILO == 1
+      wts += 1;
+   #endif
+      tt_txn->commit_rts = MAX(tt_txn->commit_rts, wts);
    }
 
    if (is_serializable(tt_txn) || is_repeatable_read(tt_txn)) {
@@ -138,6 +142,11 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
       tictoc_rw_entry *r = tictoc_get_read_set_entry(tt_txn, i);
 
       bool is_read_entry_invalid = r->rts < tt_txn->commit_rts;
+
+#if EXPERIMENTAL_MODE_SILO == 1
+      is_read_entry_invalid = true;
+#endif
+
       if (is_read_entry_invalid) {
          hash_lock_acquire(&txn_kvsb->hash_lock, r->key);
 
@@ -162,7 +171,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
             return FALSE;
          }
 
-#if EXPERIMENTAL_MODE_NO_RTS == 1
+#if EXPERIMENTAL_MODE_SILO == 1
          if (0) {
 #endif
             uint32 new_rts =
@@ -179,7 +188,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
                ValueType *new_value_ht = (ValueType *)&new_ts_set;
                platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
             }
-#if EXPERIMENTAL_MODE_NO_RTS == 1
+#if EXPERIMENTAL_MODE_SILO == 1
          }
 #endif
          hash_lock_release(&txn_kvsb->hash_lock, r->key);
@@ -314,6 +323,8 @@ transactional_splinterdb_create_or_open(const splinterdb_config   *kvsb_cfg,
                                         transactional_splinterdb **txn_kvsb,
                                         bool open_existing)
 {
+   print_current_experimental_modes();
+
    transactional_splinterdb_config *txn_splinterdb_cfg;
    txn_splinterdb_cfg = TYPED_ZALLOC(0, txn_splinterdb_cfg);
    transactional_splinterdb_config_init(txn_splinterdb_cfg, kvsb_cfg);

@@ -210,4 +210,5 @@ lock_table_is_entry_locked(lock_table *lock_tbl, tictoc_rw_entry *entry)
 {
    return lock_table_exist_overlap(lock_tbl, entry);
 }
+
 #endif
