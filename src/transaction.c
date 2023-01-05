@@ -37,7 +37,7 @@ tictoc_rw_entry_set_key(tictoc_rw_entry *e, slice key, const data_config *cfg)
 {
    char *key_buf;
    key_buf = TYPED_ARRAY_ZALLOC(0, key_buf, KEY_SIZE);
-   memmove(key_buf, slice_data(key), slice_length(key));
+   memmove(key_buf, slice_data(key), KEY_SIZE);
    e->key   = slice_create(KEY_SIZE, key_buf);
    e->start = e->last = interval_tree_key_create(e->key, cfg);
 }
@@ -100,7 +100,7 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
 
       value_ht = NULL;
       iceberg_get_value(
-         &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
+         &txn_kvsb->tscache, key_ht, &value_ht, platform_get_tid());
       platform_assert(value_ht);
 
       tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
@@ -128,7 +128,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
       KeyType    key_ht   = (KeyType)slice_data(w->key);
       ValueType *value_ht = NULL;
       iceberg_get_value(
-         &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
+         &txn_kvsb->tscache, key_ht, &value_ht, platform_get_tid());
 
       bool key_exists_in_cache = (value_ht != NULL);
       if (key_exists_in_cache) {
@@ -170,7 +170,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
          KeyType    key_ht   = (char *)slice_data(r->key);
          ValueType *value_ht = NULL;
          iceberg_get_value(
-            &txn_kvsb->tscache, key_ht, &value_ht, platform_thread_id_self());
+            &txn_kvsb->tscache, key_ht, &value_ht, platform_get_tid());
          platform_assert(value_ht);
 
          tictoc_timestamp_set *ts_set = (tictoc_timestamp_set *)value_ht;
@@ -203,7 +203,7 @@ tictoc_validation(transactional_splinterdb *txn_kvsb,
                   .delta = tictoc_timestamp_set_get_delta(ts_set->wts, new_rts)
                };
                ValueType *new_value_ht = (ValueType *)&new_ts_set;
-               platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_thread_id_self()));
+               platform_assert(iceberg_update(&txn_kvsb->tscache, key_ht, *new_value_ht, platform_get_tid()));
             }
 #if EXPERIMENTAL_MODE_SILO == 1
          }
@@ -254,14 +254,14 @@ tictoc_write(transactional_splinterdb *txn_kvsb, tictoc_transaction *tt_txn)
    
 #if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
       if (iceberg_insert(
-               &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self()))
+               &txn_kvsb->tscache, key_ht, *value_ht, platform_get_tid()))
       {
          w->need_to_keep_key = TRUE;
       }
 #endif
 
       iceberg_update(
-         &txn_kvsb->tscache, key_ht, *value_ht, platform_thread_id_self());
+         &txn_kvsb->tscache, key_ht, *value_ht, platform_get_tid());
    }
 }
 
@@ -447,7 +447,7 @@ transactional_splinterdb_commit(transactional_splinterdb *txn_kvsb,
       KeyType          key_ht = (KeyType)slice_data(r->key);
       // Decrease the refcount by one
       if (iceberg_remove_and_get_key(
-             &txn_kvsb->tscache, &key_ht, platform_thread_id_self()))
+             &txn_kvsb->tscache, &key_ht, platform_get_tid()))
       {
          if (slice_data(r->key) != key_ht) {
             platform_free_from_heap(0, key_ht);

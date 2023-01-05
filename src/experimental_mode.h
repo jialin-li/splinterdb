@@ -11,7 +11,7 @@
 #endif
 #define EXPERIMENTAL_MODE_USE_ICEBERG_FOR_LOCK_TABLE 0
 
-inline void
+static inline void
 print_current_experimental_modes() {
   platform_default_log("EXPERIMENTAL_MODE_KEEP_ALL_KEYS: %d\n", EXPERIMENTAL_MODE_KEEP_ALL_KEYS);
   platform_default_log("EXPERIMENTAL_MODE_SILO: %d\n", EXPERIMENTAL_MODE_SILO);
