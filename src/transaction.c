@@ -288,19 +288,8 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
             merge_accumulator new_message;
             merge_accumulator_init_from_message(&new_message, 0, msg);
             data_merge_tuples(cfg, key, w->msg, &new_message);
-
             platform_free_from_heap(0, (void *)message_data(w->msg));
-
-            char *msg_buf;
-            msg_buf = TYPED_ARRAY_ZALLOC(0, msg_buf,  merge_accumulator_length(&new_message));
-            memmove(msg_buf,
-                    merge_accumulator_data(&new_message),
-                    merge_accumulator_length(&new_message));
-            w->msg = message_create(
-               merge_accumulator_message_class(&new_message),
-               slice_create(merge_accumulator_length(&new_message), msg_buf));
-
-            merge_accumulator_deinit(&new_message);
+            w->msg = merge_accumulator_to_message(&new_message);
          }
 
          w->wts = ts_set.wts;
@@ -313,7 +302,7 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
    tictoc_rw_entry *w = tictoc_get_new_write_set_entry(txn);
    platform_assert(!tictoc_rw_entry_is_invalid(w));
 
-   tictoc_rw_entry_set_key(w, key, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
+   tictoc_rw_entry_set_key(w, key, cfg);
    tictoc_rw_entry_set_msg(w, msg);
    w->wts = ts_set.wts;
    w->rts = tictoc_timestamp_set_get_rts(&ts_set);
@@ -331,7 +320,7 @@ transactional_splinterdb_config_init(
 #if EXPERIMENTAL_MODE_KEEP_ALL_KEYS == 1
    txn_splinterdb_cfg->tscache_log_slots = 32;
 #else
-   txn_splinterdb_cfg->tscache_log_slots = 28;
+   txn_splinterdb_cfg->tscache_log_slots = 24;
 #endif
 }
 
