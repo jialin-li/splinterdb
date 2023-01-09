@@ -41,7 +41,7 @@ UNIT_TESTSRC := $(call rwildcard, $(UNIT_TESTSDIR), *.c)
 # Specify the r.e. so it will only pick-up sources that are common to multiple
 # unit-tests (and won't pick-up test-specific common files, e.g.
 # btree_test_common.c)
-COMMON_UNIT_TESTSRC := $(shell find $(UNIT_TESTSDIR) -name "*tests_common.c")
+COMMON_UNIT_TESTSRC := $(wildcard $(UNIT_TESTSDIR)/*tests_common.c)
 
 TESTSRC := $(COMMON_TESTSRC) $(FUNCTIONAL_TESTSRC) $(UNIT_TESTSRC)
 
@@ -457,7 +457,8 @@ $(BINDIR)/$(UNITDIR)/task_system_test: $(UTIL_SYS)                              
                                        $(OBJDIR)/$(FUNCTIONAL_TESTSDIR)/test_async.o \
                                        $(LIBDIR)/libsplinterdb.so
 
-$(BINDIR)/$(UNITDIR)/platform_apis_test: $(UTIL_SYS)       \
+$(BINDIR)/$(UNITDIR)/platform_apis_test: $(UTIL_SYS)               \
+                                         $(COMMON_UNIT_TESTOBJ)    \
                                          $(PLATFORM_SYS)
 
 ########################################

@@ -1,4 +1,4 @@
-// Copyright 2022 VMware, Inc.
+// Copyright 2023 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 /*
@@ -12,7 +12,7 @@
 #include "unit_tests.h"
 
 /*
- * Setup function to manage manage output log streams from most (unit) tests.
+ * Setup function to manage output log streams from most (unit) tests.
  * By default, there will be no output. Info / error messages are only printed
  * when the caller sets the VERBOSE env var to opt-in.
  */
@@ -25,7 +25,7 @@ set_log_streams_for_tests()
 }
 
 /*
- * Setup function is provided to manage output log streams from (unit) tests.
+ * Setup function is provided to manage output log streams from (unit) tests
  * that are negative tests, checking error conditions / messages.
  *
  * Some unit tests exercise error cases, so even when everything succeeds, they
