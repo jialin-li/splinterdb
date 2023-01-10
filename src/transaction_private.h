@@ -10,9 +10,9 @@
 #include "atomic_counter.h"
 #include "hashmap.h"
 
-//#define PARALLEL_VALIDATION
+// #define PARALLEL_VALIDATION
 
-#define TRANSACTION_RW_SET_MAX 2
+#define TRANSACTION_RW_SET_MAX 16
 
 typedef struct transaction_internal transaction_internal;
 
