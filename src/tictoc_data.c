@@ -78,10 +78,12 @@ tictoc_rw_entry_is_not_in_write_set(tictoc_transaction *tt_txn,
                                     tictoc_rw_entry    *entry,
                                     const data_config  *cfg)
 {
+   key ekey = key_create_from_slice(entry->key);
    // TODO: feel free to implement binary search
    for (uint64 i = 0; i < tt_txn->write_cnt; ++i) {
       tictoc_rw_entry *w = tictoc_get_write_set_entry(tt_txn, i);
-      if (data_key_compare(cfg, entry->key, w->key) == 0) {
+      key wkey = key_create_from_slice(w->key);
+      if (data_key_compare(cfg, ekey, wkey) == 0) {
          return FALSE;
       }
    }
@@ -126,7 +128,10 @@ tictoc_rw_entry_key_comp(const void *elem1, const void *elem2, void *args)
    tictoc_rw_entry  **b   = (tictoc_rw_entry **)elem2;
    const data_config *cfg = (const data_config *)args;
 
-   return data_key_compare(cfg, (*a)->key, (*b)->key);
+   key akey = key_create_from_slice((*a)->key);
+   key bkey = key_create_from_slice((*b)->key);
+
+   return data_key_compare(cfg, akey, bkey);
 }
 
 void

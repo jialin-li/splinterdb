@@ -1,10 +1,5 @@
-#include "splinterdb/transaction.h"
-#include "transaction_internal.h"
-#include "splinterdb_internal.h"
-#include "platform_linux/platform.h"
 #include "data_internal.h"
-#include "util.h"
-#include "experimental_mode.h"
+#include "transaction_internal.h"
 #include "poison.h"
 
 tictoc_timestamp_set ZERO_TICTOC_TIMESTAMP_SET = {.dummy = 0,
@@ -66,16 +61,18 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
 {
    const data_config *cfg = txn_kvsb->tcfg->kvsb_cfg.data_cfg;
 
-   int rc = splinterdb_lookup(txn_kvsb->kvsb, key, result);
+   int rc = splinterdb_lookup(txn_kvsb->kvsb, user_key, result);
 
    if (splinterdb_lookup_found(result)) {
+      key ukey = key_create_from_slice(user_key);
+
       // Check if there is the same key so that a txn does not increase the
       // refcount on the same key multiple times
       bool is_no_same_key = TRUE;
       for (uint64 i = 0; i < tt_txn->read_cnt; ++i) {
          tictoc_rw_entry *r = tictoc_get_read_set_entry(tt_txn, i);
-
-         if (data_key_compare(cfg, r->key, key) == 0) {
+         key rkey = key_create_from_slice(r->key);
+         if (data_key_compare(cfg, rkey, ukey) == 0) {
             is_no_same_key = FALSE;
             break;
          }
@@ -84,7 +81,7 @@ tictoc_read(transactional_splinterdb *txn_kvsb,
       tictoc_rw_entry *r = tictoc_get_new_read_set_entry(tt_txn);
       platform_assert(!tictoc_rw_entry_is_invalid(r));
 
-      tictoc_rw_entry_set_key(r, key, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
+      tictoc_rw_entry_set_key(r, user_key, txn_kvsb->tcfg->kvsb_cfg.data_cfg);
 
       KeyType    key_ht   = (KeyType)slice_data(r->key);
       ValueType *value_ht = (ValueType *)&ZERO_TICTOC_TIMESTAMP_SET;
@@ -273,12 +270,13 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
                    message                   msg)
 {
    const data_config *cfg = txn_kvsb->tcfg->kvsb_cfg.data_cfg;
+   key ukey = key_create_from_slice(user_key);
 
    // TODO: this part can be done by binary search if the write_set is sorted
    for (uint64 i = 0; i < txn->write_cnt; ++i) {
       tictoc_rw_entry *w = tictoc_get_write_set_entry(txn, i);
-
-      if (data_key_compare(cfg, w->key, key) == 0) {
+      key wkey = key_create_from_slice(w->key);
+      if (data_key_compare(cfg, wkey, ukey) == 0) {
          if (message_is_definitive(msg)) {
             platform_free_from_heap(0, (void *)message_data(w->msg));
             tictoc_rw_entry_set_msg(w, msg);
@@ -287,7 +285,7 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
 
             merge_accumulator new_message;
             merge_accumulator_init_from_message(&new_message, 0, msg);
-            data_merge_tuples(cfg, key, w->msg, &new_message);
+            data_merge_tuples(cfg, ukey, w->msg, &new_message);
             platform_free_from_heap(0, (void *)message_data(w->msg));
             w->msg = merge_accumulator_to_message(&new_message);
          }
@@ -302,7 +300,7 @@ tictoc_local_write(transactional_splinterdb *txn_kvsb,
    tictoc_rw_entry *w = tictoc_get_new_write_set_entry(txn);
    platform_assert(!tictoc_rw_entry_is_invalid(w));
 
-   tictoc_rw_entry_set_key(w, key, cfg);
+   tictoc_rw_entry_set_key(w, user_key, cfg);
    tictoc_rw_entry_set_msg(w, msg);
    w->wts = ts_set.wts;
    w->rts = tictoc_timestamp_set_get_rts(&ts_set);

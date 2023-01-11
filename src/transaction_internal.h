@@ -4,6 +4,11 @@
 #include "data_internal.h"
 #include "tictoc_data.h"
 #include "hash_lock.h"
+#include "splinterdb/transaction.h"
+#include "platform_linux/platform.h"
+#include "util.h"
+#include "experimental_mode.h"
+#include "splinterdb_internal.h"
 #include "iceberg_table.h"
 
 typedef struct transactional_splinterdb_config {
