@@ -1,4 +1,5 @@
 #include "transaction_util.h"
+#include "data_internal.h"
 #include "platform_linux/poison.h"
 
 static uint64 gc_count = 0;
@@ -174,7 +175,9 @@ transaction_check_for_conflict(transaction_table    *transactions,
    while (txn_committed) {
       for (uint64 i = 0; i < txn->rs_size; ++i) {
          for (uint64 j = 0; j < txn_committed->ws_size; ++j) {
-            if (data_key_compare(cfg, txn->rs[i].key, txn_committed->ws[j].key)
+            key rkey = key_create_from_slice(txn->rs[i].key);
+            key wkey = key_create_from_slice(txn_committed->ws[j].key);
+            if (data_key_compare(cfg, rkey, wkey)
                 == 0) {
                return FALSE;
             }

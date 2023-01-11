@@ -1,3 +1,4 @@
+#include "data_internal.h"
 #include "transaction_private.h"
 #include "transaction_util.h"
 #include "platform_linux/poison.h"
@@ -240,14 +241,17 @@ transactional_splinterdb_abort(transactional_splinterdb *txn_kvsb,
 
 static void
 insert_into_write_set(transaction_internal *txn_internal,
-                      slice                 key,
+                      slice                 user_key,
                       message_type          op,
                       slice                 value,
                       const data_config    *cfg)
 {
+   key ukey = key_create_from_slice(user_key);
+
    // check if there is the same key in its write set
    for (uint64 i = 0; i < txn_internal->ws_size; ++i) {
-      if (data_key_compare(cfg, key, txn_internal->ws[i].key) == 0) {
+      key wkey = key_create_from_slice(txn_internal->ws[i].key);
+      if (data_key_compare(cfg, ukey, wkey) == 0) {
          if (op == MESSAGE_TYPE_INSERT) {
             void *old_msg_data = (void *)message_data(txn_internal->ws[i].msg);
             platform_free(0, old_msg_data);
@@ -265,7 +269,7 @@ insert_into_write_set(transaction_internal *txn_internal,
             merge_accumulator_init_from_message(
                &new_msg, 0, message_create(op, value));
 
-            data_merge_tuples(cfg, key, txn_internal->ws[i].msg, &new_msg);
+            data_merge_tuples(cfg, ukey, txn_internal->ws[i].msg, &new_msg);
 
             void *old_msg_data = (void *)message_data(txn_internal->ws[i].msg);
             platform_free(0, old_msg_data);
@@ -288,10 +292,10 @@ insert_into_write_set(transaction_internal *txn_internal,
    }
 
 
-   void *key_buf = platform_aligned_zalloc(0, 64, slice_length(key));
-   memmove(key_buf, slice_data(key), slice_length(key));
+   void *key_buf = platform_aligned_zalloc(0, 64, slice_length(user_key));
+   memmove(key_buf, slice_data(user_key), slice_length(user_key));
    txn_internal->ws[txn_internal->ws_size].key =
-      slice_create(slice_length(key), key_buf);
+      slice_create(slice_length(user_key), key_buf);
 
    if (op == MESSAGE_TYPE_DELETE) {
       txn_internal->ws[txn_internal->ws_size].msg = DELETE_MESSAGE;
@@ -319,14 +323,14 @@ insert_into_read_set(transaction_internal *txn_internal, slice key)
 int
 transactional_splinterdb_insert(transactional_splinterdb *txn_kvsb,
                                 transaction              *txn,
-                                slice                     key,
+                                slice                     user_key,
                                 slice                     value)
 {
    transaction_internal *txn_internal = txn->internal;
    platform_assert(txn_internal != NULL);
 
    insert_into_write_set(txn_internal,
-                         key,
+                         user_key,
                          MESSAGE_TYPE_INSERT,
                          value,
                          txn_kvsb->tcfg->kvsb_cfg.data_cfg);
@@ -337,13 +341,13 @@ transactional_splinterdb_insert(transactional_splinterdb *txn_kvsb,
 int
 transactional_splinterdb_delete(transactional_splinterdb *txn_kvsb,
                                 transaction              *txn,
-                                slice                     key)
+                                slice                     user_key)
 {
    transaction_internal *txn_internal = txn->internal;
    platform_assert(txn_internal != NULL);
 
    insert_into_write_set(txn_internal,
-                         key,
+                         user_key,
                          MESSAGE_TYPE_DELETE,
                          NULL_SLICE,
                          txn_kvsb->tcfg->kvsb_cfg.data_cfg);
@@ -354,14 +358,14 @@ transactional_splinterdb_delete(transactional_splinterdb *txn_kvsb,
 int
 transactional_splinterdb_update(transactional_splinterdb *txn_kvsb,
                                 transaction              *txn,
-                                slice                     key,
+                                slice                     user_key,
                                 slice                     delta)
 {
    transaction_internal *txn_internal = txn->internal;
    platform_assert(txn_internal != NULL);
 
    insert_into_write_set(txn_internal,
-                         key,
+                         user_key,
                          MESSAGE_TYPE_UPDATE,
                          delta,
                          txn_kvsb->tcfg->kvsb_cfg.data_cfg);
@@ -372,16 +376,19 @@ transactional_splinterdb_update(transactional_splinterdb *txn_kvsb,
 int
 transactional_splinterdb_lookup(transactional_splinterdb *txn_kvsb,
                                 transaction              *txn,
-                                slice                     key,
+                                slice                     user_key,
                                 splinterdb_lookup_result *result)
 {
    transaction_internal *txn_internal = txn->internal;
    platform_assert(txn_internal != NULL);
 
+   key ukey = key_create_from_slice(user_key);
+
    // Support read a value within its write set, which may not be committed
    for (int i = 0; i < txn_internal->ws_size; ++i) {
+      key wkey = key_create_from_slice(txn_internal->ws[i].key);
       if (data_key_compare(
-             txn_kvsb->tcfg->kvsb_cfg.data_cfg, key, txn_internal->ws[i].key)
+             txn_kvsb->tcfg->kvsb_cfg.data_cfg, ukey, wkey)
           == 0)
       {
          _splinterdb_lookup_result *_result =
@@ -389,16 +396,16 @@ transactional_splinterdb_lookup(transactional_splinterdb *txn_kvsb,
          merge_accumulator_copy_message(&_result->value,
                                         txn_internal->ws[i].msg);
 
-         insert_into_read_set(txn_internal, key);
+         insert_into_read_set(txn_internal, user_key);
 
          return 0;
       }
    }
 
-   int rc = splinterdb_lookup(txn_kvsb->kvsb, key, result);
+   int rc = splinterdb_lookup(txn_kvsb->kvsb, user_key, result);
 
    if (splinterdb_lookup_found(result)) {
-      insert_into_read_set(txn_internal, key);
+      insert_into_read_set(txn_internal, user_key);
    }
 
    return rc;

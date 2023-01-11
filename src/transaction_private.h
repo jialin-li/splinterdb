@@ -4,7 +4,7 @@
 #include "splinterdb/transaction.h"
 #include "splinterdb/public_platform.h"
 #include "splinterdb/data.h"
-#include "splinterdb_private.h"
+#include "splinterdb_internal.h"
 #include "data_internal.h"
 #include "platform.h"
 #include "atomic_counter.h"
