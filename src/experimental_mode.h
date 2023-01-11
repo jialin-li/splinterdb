@@ -11,8 +11,11 @@
 #endif
 #define EXPERIMENTAL_MODE_USE_ICEBERG_FOR_LOCK_TABLE 0
 
-static inline void
+inline void
 print_current_experimental_modes() {
+  // This function is used for only research experiments
+  platform_set_log_streams(stdout, stderr);
+
   platform_default_log("EXPERIMENTAL_MODE_KEEP_ALL_KEYS: %d\n", EXPERIMENTAL_MODE_KEEP_ALL_KEYS);
   platform_default_log("EXPERIMENTAL_MODE_SILO: %d\n", EXPERIMENTAL_MODE_SILO);
   platform_default_log("EXPERIMENTAL_MODE_USE_ICEBERG_FOR_LOCK_TABLE: %d\n", EXPERIMENTAL_MODE_USE_ICEBERG_FOR_LOCK_TABLE);
