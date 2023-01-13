@@ -387,9 +387,7 @@ transactional_splinterdb_lookup(transactional_splinterdb *txn_kvsb,
    // Support read a value within its write set, which may not be committed
    for (int i = 0; i < txn_internal->ws_size; ++i) {
       key wkey = key_create_from_slice(txn_internal->ws[i].key);
-      if (data_key_compare(
-             txn_kvsb->tcfg->kvsb_cfg.data_cfg, ukey, wkey)
-          == 0)
+      if (data_key_compare(txn_kvsb->tcfg->kvsb_cfg.data_cfg, ukey, wkey) == 0)
       {
          _splinterdb_lookup_result *_result =
             (_splinterdb_lookup_result *)result;

@@ -177,8 +177,7 @@ transaction_check_for_conflict(transaction_table    *transactions,
          for (uint64 j = 0; j < txn_committed->ws_size; ++j) {
             key rkey = key_create_from_slice(txn->rs[i].key);
             key wkey = key_create_from_slice(txn_committed->ws[j].key);
-            if (data_key_compare(cfg, rkey, wkey)
-                == 0) {
+            if (data_key_compare(cfg, rkey, wkey) == 0) {
                return FALSE;
             }
          }
@@ -199,14 +198,17 @@ transaction_check_for_conflict_with_active_transactions(
    transaction_internal *txn_i = txn->finish_active_transactions.head->next;
    while (txn_i) {
       for (uint64 i = 0; i < txn_i->ws_size; ++i) {
+         key wkey = key_create_from_slice(txn_i->ws[i].key);
          for (uint64 j = 0; j < txn->rs_size; ++j) {
-            if (data_key_compare(cfg, txn_i->ws[i].key, txn->rs[j].key) == 0) {
+            key txn_rkey = key_create_from_slice(txn->rs[j].key);
+            if (data_key_compare(cfg, wkey, txn_rkey) == 0) {
                return FALSE;
             }
          }
 
          for (uint64 j = 0; j < txn->ws_size; ++j) {
-            if (data_key_compare(cfg, txn_i->ws[i].key, txn->ws[j].key) == 0) {
+            key txn_wkey = key_create_from_slice(txn->ws[j].key);
+            if (data_key_compare(cfg, wkey, txn_wkey) == 0) {
                return FALSE;
             }
          }
