@@ -11,7 +11,7 @@ fn gen_import() {
     let platform_dir = env::var("PLATFORM_DIR").unwrap_or("linux".to_string());
 
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+        .header("wrapper.h") // all c headers that need to be converted into rust 
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .ctypes_prefix("cty")
         .clang_args(["-I", "../include"])
@@ -22,12 +22,13 @@ fn gen_import() {
         .generate()
         .expect("Unable to generate import bindings");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()); // somewhere in cargo out/bindings.rs
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("couldn't write bindings");
 }
 
+// create c header that describes entry points into rust
 fn gen_export() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
