@@ -93,23 +93,10 @@ typedef struct allocator_config {
  *      Initialize allocator config values
  *-----------------------------------------------------------------------------
  */
-// TODO(robj): maybe someday add allocator.c
-static inline void
+void
 allocator_config_init(allocator_config *allocator_cfg,
                       io_config        *io_cfg,
-                      uint64            capacity)
-{
-   ZERO_CONTENTS(allocator_cfg);
-
-   allocator_cfg->io_cfg   = io_cfg;
-   allocator_cfg->capacity = capacity;
-
-   allocator_cfg->page_capacity   = capacity / io_cfg->page_size;
-   allocator_cfg->extent_capacity = capacity / io_cfg->extent_size;
-   uint64 log_extent_size         = 63 - __builtin_clzll(io_cfg->extent_size);
-   allocator_cfg->extent_mask     = ~((1ULL << log_extent_size) - 1);
-}
-
+                      uint64            capacity);
 
 static inline uint64
 allocator_config_extent_base_addr(allocator_config *allocator_cfg, uint64 addr)
@@ -211,7 +198,7 @@ allocator_dec_ref(allocator *al, uint64 addr, page_type type)
 
 // TODO rename get_refcount
 static inline uint8
-allocator_get_ref(allocator *al, uint64 addr)
+allocator_get_refcount(allocator *al, uint64 addr)
 {
    return al->ops->get_ref(al, addr);
 }
@@ -271,12 +258,40 @@ static inline bool
 allocator_page_valid(allocator *al, uint64 addr)
 {
    allocator_config *allocator_cfg = allocator_get_config(al);
-   if (addr % allocator_cfg->io_cfg->page_size != 0)
+
+   if ((addr % allocator_cfg->io_cfg->page_size) != 0) {
+      platform_error_log("%s():%d: Specified addr=%lu is not divisible by"
+                         " configured page size=%lu\n",
+                         __FUNCTION__,
+                         __LINE__,
+                         addr,
+                         allocator_cfg->io_cfg->page_size);
       return FALSE;
+   }
+
    uint64 base_addr = allocator_config_extent_base_addr(allocator_cfg, addr);
-   if (addr < allocator_cfg->capacity) {
-      return base_addr != 0 && allocator_get_ref(al, base_addr) != 0;
+   if ((base_addr != 0) && (addr < allocator_cfg->capacity)) {
+      uint8 refcount = allocator_get_refcount(al, base_addr);
+      if (refcount == 0) {
+         platform_error_log(
+            "%s():%d: Trying to access an unreferenced extent."
+            " base_addr=%lu, addr=%lu, allocator_get_refcount()=%d\n",
+            __FUNCTION__,
+            __LINE__,
+            base_addr,
+            addr,
+            refcount);
+      }
+      return (refcount != 0);
    } else {
+      platform_error_log("%s():%d: Extent out of allocator capacity range."
+                         " base_addr=%lu, addr=%lu"
+                         ", allocator_get_capacity()=%lu\n",
+                         __FUNCTION__,
+                         __LINE__,
+                         base_addr,
+                         addr,
+                         allocator_get_capacity(al));
       return FALSE;
    }
 }

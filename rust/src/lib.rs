@@ -73,7 +73,7 @@ unsafe extern "C" fn page_alloc(
     return &mut ((*sc).page_handles.as_mut().unwrap()[(addr / (*(*sc).cfg).page_size) as usize]);
 }
 
-unsafe extern "C" fn extent_hard_evict(cc: *mut cache, addr: u64, type_: page_type) {
+unsafe extern "C" fn extent_discard(cc: *mut cache, addr: u64, type_: page_type) {
 }
 
 unsafe extern "C" fn page_get(
@@ -90,7 +90,7 @@ unsafe extern "C" fn page_get(
 unsafe extern "C" fn page_unget(cc: *mut cache, page: *mut page_handle) {
 }
 
-unsafe extern "C" fn page_claim(cc: *mut cache, page: *mut page_handle) -> bool_ {
+unsafe extern "C" fn page_try_claim(cc: *mut cache, page: *mut page_handle) -> bool_ {
     true as bool_
 }
 
@@ -142,12 +142,12 @@ fn unimpl() {
 const stubcache_ops: cache_ops = cache_ops {
     page_alloc: Some(page_alloc),
 
-    extent_hard_evict: Some(extent_hard_evict),
+    extent_discard: Some(extent_discard),
     page_get: Some(page_get),
     page_get_async: None,
     page_async_done: None,
     page_unget: Some(page_unget),
-    page_claim: Some(page_claim),
+    page_try_claim: Some(page_try_claim),
     page_unclaim: Some(page_unclaim),
     page_lock: Some(page_lock),
     page_unlock: Some(page_unlock),

@@ -84,9 +84,8 @@ CTEST_DATA(task_system)
    platform_heap_id     hid;
 
    // Config structs required, to exercise task subsystem
-   io_config io_cfg;
-
-   uint64 num_bg_threads[NUM_TASK_TYPES];
+   io_config          io_cfg;
+   task_system_config task_cfg;
 
    // Following get setup pointing to allocated memory
    platform_io_handle *ioh; // Only prerequisite needed to setup task system
@@ -192,7 +191,6 @@ CTEST2(task_system, test_basic_create_destroy)
 {
    threadid main_thread_idx = platform_get_tid();
    ASSERT_EQUAL(main_thread_idx, 0);
-   ASSERT_FALSE(task_system_use_bg_threads(data->tasks));
 }
 
 /*
@@ -324,7 +322,7 @@ CTEST2(task_system, test_one_thread_using_extern_apis)
  * Background threads are off, by default.
  * ------------------------------------------------------------------------
  */
-CTEST2(task_system, test_multiple_threads)
+CTEST2(task_system, test_max_threads_using_lower_apis)
 {
    platform_thread new_thread;
    thread_config   thread_cfg[MAX_THREADS];
@@ -401,7 +399,7 @@ CTEST2(task_system, test_task_system_creation_with_bg_threads)
 /*
  * ------------------------------------------------------------------------
  * Test creation of task system using up the threads for background threads.
- * Verify ththe we can create just one more user-thread and that the next
+ * Verify that we can create just one more user-thread and that the next
  * user-thread creation should fail with a proper error message.
  * ------------------------------------------------------------------------
  */
@@ -412,7 +410,7 @@ CTEST2(task_system, test_use_all_but_one_threads_for_bg_threads)
    // Destroy the task system setup by the harness, by default, w/o bg threads.
    task_system_destroy(data->hid, &data->tasks);
 
-   // Consume all available threads with background threads.
+   // Consume all-but-one available threads with background threads.
    rc = create_task_system_with_bg_threads(data, 1, (MAX_THREADS - 3));
    ASSERT_TRUE(SUCCESS(rc));
 
@@ -440,7 +438,7 @@ CTEST2(task_system, test_use_all_but_one_threads_for_bg_threads)
 
    // Wait till 1st user-thread gets to its wait-for-stop loop
    while (!thread_cfg[0].waitfor_stop_signal) {
-      platform_sleep(USEC_TO_NSEC(100000)); // 100 msec.
+      platform_sleep_ns(USEC_TO_NSEC(100000)); // 100 msec.
    }
    thread_cfg[1].tasks          = data->tasks;
    thread_cfg[1].exp_thread_idx = task_get_max_tid(data->tasks);
@@ -478,18 +476,16 @@ create_task_system_without_bg_threads(void *datap)
    struct CTEST_IMPL_DATA_SNAME(task_system) *data =
       (struct CTEST_IMPL_DATA_SNAME(task_system) *)datap;
 
-   // no background threads by default.
-   ZERO_ARRAY(data->num_bg_threads);
-
    platform_status rc = STATUS_OK;
 
-   // Background threads are OFF by default.
-   rc = task_system_create(data->hid,
-                           data->ioh,
-                           &data->tasks,
-                           TRUE, // Use statistics,
-                           data->num_bg_threads,
-                           trunk_get_scratch_size());
+   // no background threads by default.
+   uint64 num_bg_threads[NUM_TASK_TYPES] = {0};
+   rc = task_system_config_init(&data->task_cfg,
+                                TRUE, // use stats
+                                num_bg_threads,
+                                trunk_get_scratch_size());
+   ASSERT_TRUE(SUCCESS(rc));
+   rc = task_system_create(data->hid, data->ioh, &data->tasks, &data->task_cfg);
    return rc;
 }
 
@@ -503,20 +499,21 @@ create_task_system_with_bg_threads(void  *datap,
                                    uint64 num_memtable_bg_threads,
                                    uint64 num_normal_bg_threads)
 {
+   platform_status rc;
    // Cast void * datap to ptr-to-CTEST_DATA() struct in use.
    struct CTEST_IMPL_DATA_SNAME(task_system) *data =
       (struct CTEST_IMPL_DATA_SNAME(task_system) *)datap;
 
-   ZERO_ARRAY(data->num_bg_threads);
-   data->num_bg_threads[TASK_TYPE_MEMTABLE] = num_memtable_bg_threads;
-   data->num_bg_threads[TASK_TYPE_NORMAL]   = num_normal_bg_threads;
+   uint64 num_bg_threads[NUM_TASK_TYPES] = {0};
+   num_bg_threads[TASK_TYPE_MEMTABLE]    = num_memtable_bg_threads;
+   num_bg_threads[TASK_TYPE_NORMAL]      = num_normal_bg_threads;
+   rc = task_system_config_init(&data->task_cfg,
+                                TRUE, // use stats
+                                num_bg_threads,
+                                trunk_get_scratch_size());
+   ASSERT_TRUE(SUCCESS(rc));
 
-   platform_status rc = task_system_create(data->hid,
-                                           data->ioh,
-                                           &data->tasks,
-                                           TRUE, // Use statistics,
-                                           data->num_bg_threads,
-                                           trunk_get_scratch_size());
+   rc = task_system_create(data->hid, data->ioh, &data->tasks, &data->task_cfg);
    if (!SUCCESS(rc)) {
       return rc;
    }
@@ -525,7 +522,7 @@ create_task_system_with_bg_threads(void  *datap,
    uint64   nbg_threads   = (num_memtable_bg_threads + num_normal_bg_threads);
    threadid max_thread_id = task_get_max_tid(data->tasks);
    while (max_thread_id < nbg_threads) {
-      platform_sleep(USEC_TO_NSEC(100000)); // 100 msec.
+      platform_sleep_ns(USEC_TO_NSEC(100000)); // 100 msec.
       max_thread_id = task_get_max_tid(data->tasks);
    }
    return rc;
@@ -618,7 +615,7 @@ exec_one_thread_use_lower_apis(void *arg)
    // SplinterDB's jugglery to keep track of resources. get_tid() should
    // now be reset.
    threadid get_tid_after_deregister = platform_get_tid();
-   ASSERT_EQUAL(0,
+   ASSERT_EQUAL(INVALID_TID,
                 get_tid_after_deregister,
                 "get_tid_after_deregister=%lu is != expected index into"
                 " thread array, %lu ",
@@ -695,6 +692,9 @@ exec_one_of_n_threads(void *arg)
 {
    thread_config *thread_cfg = (thread_config *)arg;
 
+   // Before registration, thread ID should be in an uninit'ed state
+   ASSERT_EQUAL(INVALID_TID, platform_get_tid());
+
    task_register_this_thread(thread_cfg->tasks, trunk_get_scratch_size());
 
    threadid this_threads_index = platform_get_tid();
@@ -707,21 +707,20 @@ exec_one_of_n_threads(void *arg)
    // Test case is carefully constructed to fire-up n-threads. Wait for
    // them to all start-up.
    while (task_get_max_tid(thread_cfg->tasks) < MAX_THREADS) {
-      platform_sleep(USEC_TO_NSEC(100000)); // 100 msec.
+      platform_sleep_ns(USEC_TO_NSEC(100000)); // 100 msec.
    }
 
    task_deregister_this_thread(thread_cfg->tasks);
 
    // Register / de-register of thread with SplinterDB's task system is just
-   // SplinterDB's jugglery to keep track of resources. get_tid() should still
-   // remain the expected index into the threads[] array.
+   // SplinterDB's jugglery to keep track of resources. Deregistration should
+   // have re-init'ed the thread ID.
    threadid get_tid_after_deregister = platform_get_tid();
-   ASSERT_EQUAL(0,
+   ASSERT_EQUAL(INVALID_TID,
                 get_tid_after_deregister,
-                "get_tid_after_deregister=%lu is != the index into"
-                " thread array, %lu ",
+                "get_tid_after_deregister=%lu should be an invalid tid, %lu",
                 get_tid_after_deregister,
-                this_threads_index);
+                INVALID_TID);
 }
 
 /*
@@ -749,7 +748,7 @@ exec_user_thread_loop_for_stop(void *arg)
    // for a notification to stop ourselves.
    thread_cfg->waitfor_stop_signal = TRUE;
    while (!thread_cfg->stop_thread) {
-      platform_sleep(USEC_TO_NSEC(100000)); // 100 msec.
+      platform_sleep_ns(USEC_TO_NSEC(100000)); // 100 msec.
    }
    CTEST_LOG_INFO("Last user thread ID=%lu, created on line=%d exiting ...\n",
                   this_threads_idx,

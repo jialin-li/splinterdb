@@ -90,13 +90,14 @@ CTEST_DATA(btree_stress)
    // This part of the data structures is common to what we need
    // to set up a Splinter instance, as is done in
    // btree_test.c
-   master_config     master_cfg;
-   data_config      *data_cfg;
-   io_config         io_cfg;
-   allocator_config  allocator_cfg;
-   clockcache_config cache_cfg;
-   btree_scratch     test_scratch;
-   btree_config      dbtree_cfg;
+   master_config      master_cfg;
+   data_config       *data_cfg;
+   io_config          io_cfg;
+   allocator_config   allocator_cfg;
+   clockcache_config  cache_cfg;
+   task_system_config task_cfg;
+   btree_scratch      test_scratch;
+   btree_config       dbtree_cfg;
 
    // To create a heap for io, allocator, cache and splinter
    platform_heap_handle hh;
@@ -104,7 +105,6 @@ CTEST_DATA(btree_stress)
 
    // Stuff needed to setup and exercise multiple threads.
    platform_io_handle io;
-   uint64             num_bg_threads[NUM_TASK_TYPES];
    task_system       *ts;
    rc_allocator       al;
    clockcache         cc;
@@ -113,6 +113,16 @@ CTEST_DATA(btree_stress)
 // Setup function for suite, called before every test in suite
 CTEST_SETUP(btree_stress)
 {
+   if (Ctest_verbose) {
+      platform_set_log_streams(stdout, stderr);
+      CTEST_LOG_INFO("\nVerbose mode on.  This test exercises an error case, "
+                     "so on sucess it "
+                     "will print a message that appears to be an error.\n");
+   } else {
+      FILE *dev_null = fopen("/dev/null", "w");
+      ASSERT_NOT_NULL(dev_null);
+      platform_set_log_streams(dev_null, dev_null);
+   }
    config_set_defaults(&data->master_cfg);
    data->master_cfg.cache_capacity = GiB_TO_B(5);
    data->data_cfg                  = test_data_config;
@@ -129,7 +139,9 @@ CTEST_SETUP(btree_stress)
        || !init_btree_config_from_master_config(&data->dbtree_cfg,
                                                 &data->master_cfg,
                                                 &data->cache_cfg.super,
-                                                data->data_cfg))
+                                                data->data_cfg)
+       || !init_task_config_from_master_config(
+          &data->task_cfg, &data->master_cfg, sizeof(btree_scratch)))
    {
       ASSERT_TRUE(FALSE, "Failed to parse args\n");
    }
@@ -141,19 +153,13 @@ CTEST_SETUP(btree_stress)
       ASSERT_TRUE(FALSE, "Failed to init heap\n");
    }
    // Setup execution of concurrent threads
-   ZERO_ARRAY(data->num_bg_threads);
    data->ts = NULL;
    if (!SUCCESS(io_handle_init(&data->io, &data->io_cfg, data->hh, data->hid))
-       || !SUCCESS(task_system_create(data->hid,
-                                      &data->io,
-                                      &data->ts,
-                                      data->master_cfg.use_stats,
-                                      data->num_bg_threads,
-                                      sizeof(btree_scratch)))
+       || !SUCCESS(
+          task_system_create(data->hid, &data->io, &data->ts, &data->task_cfg))
        || !SUCCESS(rc_allocator_init(&data->al,
                                      &data->allocator_cfg,
                                      (io_handle *)&data->io,
-                                     data->hh,
                                      data->hid,
                                      platform_get_module_id()))
        || !SUCCESS(clockcache_init(&data->cc,
@@ -161,7 +167,6 @@ CTEST_SETUP(btree_stress)
                                    (io_handle *)&data->io,
                                    (allocator *)&data->al,
                                    "test",
-                                   data->hh,
                                    data->hid,
                                    platform_get_module_id())))
    {
@@ -172,7 +177,13 @@ CTEST_SETUP(btree_stress)
 }
 
 // Optional teardown function for suite, called after every test in suite
-CTEST_TEARDOWN(btree_stress) {}
+CTEST_TEARDOWN(btree_stress)
+{
+   clockcache_deinit(&data->cc);
+   rc_allocator_deinit(&data->al);
+   task_system_destroy(data->hid, &data->ts);
+   platform_heap_destroy(&data->hh);
+}
 
 /*
  * -------------------------------------------------------------------------
@@ -254,6 +265,12 @@ CTEST2(btree_stress, test_random_inserts_concurrent)
    rc = iterator_tests(
       (cache *)&data->cc, &data->dbtree_cfg, packed_root_addr, nkvs, data->hid);
    ASSERT_NOT_EQUAL(0, rc, "Invalid ranges in packed tree\n");
+
+   // Exercise print method to verify that it basically continues to work.
+   btree_print_tree(Platform_default_log_handle,
+                    (cache *)&data->cc,
+                    &data->dbtree_cfg,
+                    packed_root_addr);
 
    // Release memory allocated in this test case
    for (uint64 i = 0; i < nthreads; i++) {

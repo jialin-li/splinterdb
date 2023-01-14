@@ -28,7 +28,6 @@ test_log_crash(clockcache             *cc,
                shard_log_config       *cfg,
                shard_log              *log,
                task_system            *ts,
-               platform_heap_handle    hh,
                platform_heap_id        hid,
                test_message_generator *gen,
                uint64                  num_entries,
@@ -75,7 +74,7 @@ test_log_crash(clockcache             *cc,
    if (crash) {
       clockcache_deinit(cc);
       rc = clockcache_init(
-         cc, cache_cfg, io, al, "crashed", hh, hid, platform_get_module_id());
+         cc, cache_cfg, io, al, "crashed", hid, platform_get_module_id());
       platform_assert_status_ok(rc);
    }
 
@@ -236,6 +235,7 @@ log_test(int argc, char *argv[])
    allocator_config       al_cfg;
    clockcache_config      cache_cfg;
    shard_log_config       log_cfg;
+   task_system_config     task_cfg;
    rc_allocator           al;
    platform_status        ret;
    int                    config_argc;
@@ -281,6 +281,7 @@ log_test(int argc, char *argv[])
                             &al_cfg,
                             &cache_cfg,
                             &log_cfg,
+                            &task_cfg,
                             &seed,
                             &gen,
                             &num_bg_threads[TASK_TYPE_MEMTABLE],
@@ -307,7 +308,7 @@ log_test(int argc, char *argv[])
       goto free_iohandle;
    }
 
-   status = test_init_task_system(hid, io, &ts, cfg->use_stats, num_bg_threads);
+   status = test_init_task_system(hid, io, &ts, &task_cfg);
    if (!SUCCESS(status)) {
       platform_error_log("Failed to init splinter state: %s\n",
                          platform_status_to_string(status));
@@ -316,7 +317,7 @@ log_test(int argc, char *argv[])
    }
 
    status = rc_allocator_init(
-      &al, &al_cfg, (io_handle *)io, hh, hid, platform_get_module_id());
+      &al, &al_cfg, (io_handle *)io, hid, platform_get_module_id());
    platform_assert_status_ok(status);
 
    clockcache *cc = TYPED_MALLOC(hid, cc);
@@ -326,7 +327,6 @@ log_test(int argc, char *argv[])
                             (io_handle *)io,
                             (allocator *)&al,
                             "test",
-                            hh,
                             hid,
                             platform_get_module_id());
    platform_assert_status_ok(status);
@@ -346,7 +346,6 @@ log_test(int argc, char *argv[])
                           &log_cfg,
                           log,
                           ts,
-                          hh,
                           hid,
                           &gen,
                           500000,
@@ -360,11 +359,10 @@ log_test(int argc, char *argv[])
                           &log_cfg,
                           log,
                           ts,
-                          hh,
                           hid,
                           &gen,
                           500000,
-                          FALSE /* don't cash */);
+                          FALSE /* don't crash */);
       platform_assert(rc == 0);
    }
 

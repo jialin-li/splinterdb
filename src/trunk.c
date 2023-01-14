@@ -598,10 +598,10 @@ static inline void
 trunk_node_claim(cache *cc, trunk_node *node)
 {
    uint64 wait = 1;
-   while (!cache_claim(cc, node->page)) {
+   while (!cache_try_claim(cc, node->page)) {
       uint64 addr = node->addr;
       trunk_node_unget(cc, node);
-      platform_sleep(wait);
+      platform_sleep_ns(wait);
       wait = wait > 2048 ? wait : 2 * wait;
       trunk_node_get(cc, addr, node);
    }
@@ -907,8 +907,8 @@ trunk_set_super_block(trunk_handle *spl,
    }
    platform_assert_status_ok(rc);
    super_page = cache_get(spl->cc, super_addr, TRUE, PAGE_TYPE_SUPERBLOCK);
-   while (!cache_claim(spl->cc, super_page)) {
-      platform_sleep(wait);
+   while (!cache_try_claim(spl->cc, super_page)) {
+      platform_sleep_ns(wait);
       wait *= 2;
    }
    wait = 1;
@@ -3380,7 +3380,7 @@ trunk_memtable_incorporate(trunk_handle  *spl,
       platform_status rc = trunk_flush_fullest(spl, &root);
       if (!SUCCESS(rc)) {
          trunk_node_unlock(spl->cc, &root);
-         platform_sleep(wait);
+         platform_sleep_ns(wait);
          wait = wait > 2048 ? 2048 : 2 * wait;
          trunk_node_lock(spl->cc, &root);
       }
@@ -3609,11 +3609,11 @@ trunk_node_get_claim_maybe_descend(trunk_handle             *spl,
    uint64 wait = 1;
    while (1) {
       trunk_node_get_maybe_descend(spl, req, node);
-      if (cache_claim(spl->cc, node->page)) {
+      if (cache_try_claim(spl->cc, node->page)) {
          break;
       }
       trunk_node_unget(spl->cc, node);
-      platform_sleep(wait);
+      platform_sleep_ns(wait);
       wait = wait > 2048 ? wait : 2 * wait;
    }
 }
@@ -6174,9 +6174,7 @@ trunk_insert(trunk_handle *spl, key tuple_key, message data)
       goto out;
    }
 
-   if (!task_system_use_bg_threads(spl->ts)) {
-      task_perform_one(spl->ts);
-   }
+   task_perform_one_if_needed(spl->ts, spl->cfg.queue_scale_percent);
 
    if (spl->cfg.use_stats) {
       switch (message_class(data)) {
@@ -7280,7 +7278,8 @@ trunk_prepare_for_shutdown(trunk_handle *spl)
    }
 
    // finish any outstanding tasks and destroy task system for this table.
-   task_perform_all(spl->ts);
+   platform_status rc = task_perform_until_quiescent(spl->ts);
+   platform_assert_status_ok(rc);
 
    // destroy memtable context (and its memtables)
    memtable_context_destroy(spl->heap_id, spl->mt_ctxt);
@@ -7906,8 +7905,11 @@ trunk_print_space_use(platform_log_handle *log_handle, trunk_handle *spl)
                 "Space used by level: trunk_tree_height=%d\n",
                 trunk_tree_height(spl));
    for (uint16 i = 0; i <= trunk_tree_height(spl); i++) {
-      platform_log(
-         log_handle, "%u: %8lu MiB\n", i, B_TO_MiB(bytes_used_by_level[i]));
+      platform_log(log_handle,
+                   "%u: %lu bytes (%s)\n",
+                   i,
+                   bytes_used_by_level[i],
+                   size_str(bytes_used_by_level[i]));
    }
    platform_log(log_handle, "\n");
 }
@@ -8160,7 +8162,7 @@ trunk_print_memtable(platform_log_handle *log_handle, trunk_handle *spl)
                    "Memtable root_addr=%lu: gen %lu ref_count %u state %d\n",
                    mt_gen,
                    mt->root_addr,
-                   allocator_get_ref(spl->al, mt->root_addr),
+                   allocator_get_refcount(spl->al, mt->root_addr),
                    mt->state);
 
       memtable_print(log_handle, spl->cc, mt);
@@ -8852,7 +8854,7 @@ trunk_node_print_branches(trunk_handle *spl, uint64 addr, void *arg)
          spl, &node, branch_no, &num_tuples_in_branch, &kv_bytes_in_branch);
       uint64 kib_in_branch = 0;
       // trunk_branch_extent_count(spl, &node, branch_no);
-      kib_in_branch *= trunk_extent_size(&spl->cfg) / 1024;
+      kib_in_branch *= B_TO_KiB(trunk_extent_size(&spl->cfg));
       fraction space_amp =
          init_fraction(kib_in_branch * 1024, kv_bytes_in_branch);
       platform_log(
@@ -8862,7 +8864,7 @@ trunk_node_print_branches(trunk_handle *spl, uint64 addr, void *arg)
          branch_no,
          addr,
          num_tuples_in_branch,
-         kv_bytes_in_branch / 1024,
+         B_TO_KiB(kv_bytes_in_branch),
          kib_in_branch,
          FRACTION_ARGS(space_amp));
    }
@@ -8924,7 +8926,7 @@ trunk_validate_data_config(const data_config *cfg)
  *       This function calls btree_config_init
  *-----------------------------------------------------------------------------
  */
-void
+platform_status
 trunk_config_init(trunk_config        *trunk_cfg,
                   cache_config        *cache_cfg,
                   data_config         *data_cfg,
@@ -8936,6 +8938,7 @@ trunk_config_init(trunk_config        *trunk_cfg,
                   uint64               filter_remainder_size,
                   uint64               filter_index_size,
                   uint64               reclaim_threshold,
+                  uint64               queue_scale_percent,
                   bool                 use_log,
                   bool                 use_stats,
                   bool                 verbose_logging,
@@ -8944,6 +8947,7 @@ trunk_config_init(trunk_config        *trunk_cfg,
 {
    trunk_validate_data_config(data_cfg);
 
+   platform_status rc = STATUS_BAD_PARAM;
    uint64          trunk_pivot_size;
    uint64          bytes_for_branches;
    routing_config *filter_cfg = &trunk_cfg->filter_cfg;
@@ -8956,6 +8960,7 @@ trunk_config_init(trunk_config        *trunk_cfg,
    trunk_cfg->fanout                  = fanout;
    trunk_cfg->max_branches_per_node   = max_branches_per_node;
    trunk_cfg->reclaim_threshold       = reclaim_threshold;
+   trunk_cfg->queue_scale_percent     = queue_scale_percent;
    trunk_cfg->use_log                 = use_log;
    trunk_cfg->use_stats               = use_stats;
    trunk_cfg->verbose_logging_enabled = verbose_logging;
@@ -8964,7 +8969,7 @@ trunk_config_init(trunk_config        *trunk_cfg,
    // Inline what we would get from trunk_pivot_size(trunk_handle *).
    trunk_pivot_size = data_cfg->max_key_size + sizeof(trunk_pivot_data);
 
-   // Setting hard limit and over overprovisioning
+   // Setting hard limit and check configuration for over-provisioning
    trunk_cfg->max_pivot_keys = trunk_cfg->fanout + TRUNK_EXTRA_PIVOT_KEYS;
    uint64 header_bytes       = sizeof(trunk_hdr);
 
@@ -8972,31 +8977,44 @@ trunk_config_init(trunk_config        *trunk_cfg,
                          * (data_cfg->max_key_size + sizeof(trunk_pivot_data)));
    uint64 branch_bytes =
       trunk_cfg->max_branches_per_node * sizeof(trunk_branch);
-   uint64 trunk_node_min_size = header_bytes + pivot_bytes + branch_bytes;
-   uint64 available_pivot_bytes =
-      cache_config_page_size(cache_cfg) - header_bytes - branch_bytes;
+   uint64 trunk_node_min_size   = header_bytes + pivot_bytes + branch_bytes;
+   uint64 page_size             = cache_config_page_size(cache_cfg);
+   uint64 available_pivot_bytes = page_size - header_bytes - branch_bytes;
    uint64 available_bytes_per_pivot =
       available_pivot_bytes / trunk_cfg->max_pivot_keys;
-   uint64 available_bytes_per_pivot_key =
-      available_bytes_per_pivot - sizeof(trunk_pivot_data);
-   platform_assert(trunk_node_min_size < cache_config_page_size(cache_cfg),
-                   "\nTrunk node does not fit in page size as configured.\n"
-                   "node->hdr: %luB\n"
-                   "pivots: %luB (max_pivot=%lu x %luB)\n"
-                   "branches %luB (max_branches=%lu x %luB).\n"
-                   "Maximum key size supported with current config: %luB.\n",
-                   header_bytes,
-                   pivot_bytes,
-                   trunk_cfg->max_pivot_keys,
-                   data_cfg->max_key_size + sizeof(trunk_pivot_data),
-                   branch_bytes,
-                   max_branches_per_node,
-                   sizeof(trunk_branch),
-                   available_bytes_per_pivot_key);
+
+   // Deal with mis-configurations where we don't have available bytes per
+   // pivot key
+   uint64 available_bytes_per_pivot_key = 0;
+   if (available_bytes_per_pivot > sizeof(trunk_pivot_data)) {
+      available_bytes_per_pivot_key =
+         available_bytes_per_pivot - sizeof(trunk_pivot_data);
+   }
+
+   if (trunk_node_min_size >= page_size) {
+      platform_error_log("Trunk node min size=%lu bytes "
+                         "does not fit in page size=%lu bytes as configured.\n"
+                         "node->hdr: %lu bytes, "
+                         "pivots: %lu bytes (max_pivot=%lu x %lu bytes),\n"
+                         "branches %lu bytes (max_branches=%lu x %lu bytes).\n"
+                         "Maximum key size supported with current "
+                         "configuration: %lu bytes.\n",
+                         trunk_node_min_size,
+                         page_size,
+                         header_bytes,
+                         pivot_bytes,
+                         trunk_cfg->max_pivot_keys,
+                         trunk_pivot_size,
+                         branch_bytes,
+                         max_branches_per_node,
+                         sizeof(trunk_branch),
+                         available_bytes_per_pivot_key);
+      return rc;
+   }
 
    // Space left for branches past end of pivot array of [max_pivot_keys]
-   bytes_for_branches = (trunk_page_size(trunk_cfg) - trunk_hdr_size()
-                         - trunk_cfg->max_pivot_keys * trunk_pivot_size);
+   bytes_for_branches = (page_size - trunk_hdr_size()
+                         - (trunk_cfg->max_pivot_keys * trunk_pivot_size));
 
    // Internally determined hard-limit, which effectively depends on the
    // - configured page size and trunk header size
@@ -9085,6 +9103,8 @@ trunk_config_init(trunk_config        *trunk_cfg,
       filter_cfg->index_size *= 2;
       filter_cfg->log_index_size++;
    }
+   // When everything succeeds, return success.
+   return STATUS_OK;
 }
 
 size_t

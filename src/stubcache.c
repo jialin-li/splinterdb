@@ -127,7 +127,7 @@
 //static cache_ops stubcache_ops = {
 //    // do
 //   .page_alloc        = stubcache_page_alloc_virtual,
-//   .extent_hard_evict = (void*) stubcache_noop, // TODO rename discard
+//   .extent_discard = (void*) stubcache_noop, // TODO rename discard
 //
 //   // do
 //   .page_get          = stubcache_get_virtual,

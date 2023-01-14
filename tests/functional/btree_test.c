@@ -1466,6 +1466,7 @@ btree_test(int argc, char *argv[])
    allocator_config       al_cfg;
    clockcache_config      cache_cfg;
    shard_log_config       log_cfg;
+   task_system_config     task_cfg;
    int                    config_argc;
    char                 **config_argv;
    bool                   run_perf_test;
@@ -1514,6 +1515,7 @@ btree_test(int argc, char *argv[])
                         &al_cfg,
                         &cache_cfg,
                         &log_cfg,
+                        &task_cfg,
                         &seed,
                         &gen,
                         &num_bg_threads[TASK_TYPE_MEMTABLE],
@@ -1560,7 +1562,7 @@ btree_test(int argc, char *argv[])
       goto free_iohandle;
    }
 
-   rc = test_init_task_system(hid, io, &ts, cfg->use_stats, num_bg_threads);
+   rc = test_init_task_system(hid, io, &ts, &task_cfg);
    if (!SUCCESS(rc)) {
       platform_error_log("Failed to init splinter state: %s\n",
                          platform_status_to_string(rc));
@@ -1569,7 +1571,7 @@ btree_test(int argc, char *argv[])
 
    rc_allocator al;
    rc_allocator_init(
-      &al, &al_cfg, (io_handle *)io, hh, hid, platform_get_module_id());
+      &al, &al_cfg, (io_handle *)io, hid, platform_get_module_id());
 
    clockcache *cc = TYPED_MALLOC(hid, cc);
    rc             = clockcache_init(cc,
@@ -1577,7 +1579,6 @@ btree_test(int argc, char *argv[])
                         (io_handle *)io,
                         (allocator *)&al,
                         "test",
-                        hh,
                         hid,
                         platform_get_module_id());
    platform_assert_status_ok(rc);

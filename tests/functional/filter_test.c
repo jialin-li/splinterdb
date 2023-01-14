@@ -293,6 +293,7 @@ filter_test(int argc, char *argv[])
    allocator_config       allocator_cfg;
    clockcache_config      cache_cfg;
    shard_log_config       log_cfg;
+   task_system_config     task_cfg;
    rc_allocator           al;
    clockcache            *cc;
    int                    config_argc;
@@ -329,6 +330,7 @@ filter_test(int argc, char *argv[])
                         &allocator_cfg,
                         &cache_cfg,
                         &log_cfg,
+                        &task_cfg,
                         &seed,
                         &gen,
                         &num_memtable_bg_threads_unused,
@@ -353,8 +355,12 @@ filter_test(int argc, char *argv[])
       goto free_iohandle;
    }
 
+   task_system *ts = NULL;
+   rc              = task_system_create(hid, io, &ts, &task_cfg);
+   platform_assert_status_ok(rc);
+
    rc = rc_allocator_init(
-      &al, &allocator_cfg, (io_handle *)io, hh, hid, platform_get_module_id());
+      &al, &allocator_cfg, (io_handle *)io, hid, platform_get_module_id());
    platform_assert_status_ok(rc);
 
    cc = TYPED_MALLOC(hid, cc);
@@ -364,7 +370,6 @@ filter_test(int argc, char *argv[])
                         (io_handle *)io,
                         (allocator *)&al,
                         "test",
-                        hh,
                         hid,
                         platform_get_module_id());
    platform_assert_status_ok(rc);
